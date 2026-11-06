@@ -296,48 +296,55 @@ def continuous_service_start(record: dict[str, Any], current_term: dict[str, Any
     return chain_start.isoformat()
 
 
-def parse_leadership_page(html: str, roles: dict[str, str], members_by_name: dict[tuple[str, str], str], member_ids: set[str], side: str) -> list[dict[str, str]]:
+def parse_leadership_page(html: str, roles: dict[str, str],
+                          members_by_name: dict[tuple[str, str], str],
+                          member_ids: set[str], side: str) -> list[dict[str, str]]:
     soup = BeautifulSoup(html, "html.parser")
-    lines = [re.sub(r"\s+", " ", x).strip() for x in soup.get_text("\n").splitlines()]
-    lines = [x for x in lines if x]
     extracted: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
 
-    def match_line(line: str) -> str | None:
-        key = name_key(line)
-        if key and key in members_by_name:
-            return members_by_name[key]
-        # Some official pages include a middle initial or name suffix. Match unique first+last tokens.
-        cleaned = normalize_name(line).lower()
-        tokens = set(re.findall(r"[a-z]+", cleaned))
-        hits = [mid for (first, last), mid in members_by_name.items() if first in tokens and last in tokens]
-        return hits[0] if len(set(hits)) == 1 else None
+    def normalize_label(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
-    for label, role in roles.items():
-        label_norm = re.sub(r"[^a-z0-9]+", " ", label.lower()).strip()
-        matches = [i for i, line in enumerate(lines) if re.sub(r"[^a-z0-9]+", " ", line.lower()).strip() == label_norm]
-        if not matches:
-            # Accept lines prefixed by a chamber label, e.g. "Senate Majority Leader".
-            matches = [i for i, line in enumerate(lines) if label_norm in re.sub(r"[^a-z0-9]+", " ", line.lower()).strip()]
-        for idx in matches:
-            search_ranges = [range(idx + 1, min(idx + 6, len(lines)))] if side == "senate" else [range(max(0, idx - 6), idx)]
-            # House pages normally put the member name just before the title; Senate pages put it after.
-            found = None
-            for indices in search_ranges:
-                candidates = list(indices)
-                if side == "house":
-                    candidates.reverse()
-                for j in candidates:
-                    found = match_line(lines[j])
-                    if found:
-                        break
-                if found:
-                    break
-            if found and found in member_ids and (found, role) not in seen:
-                extracted.append({"id": found, "role": role, "chamber": "Senate" if side == "senate" else "House"})
-                seen.add((found, role))
+    def match_member(node) -> str | None:
+        # First try official Biographical Directory links.
+        for ancestor in [node, *list(node.parents)[:7]]:
+            links = ancestor.find_all("a", href=True)
+            for link in links:
+                href = link.get("href", "")
+                for member_id in member_ids:
+                    if member_id.lower() in href.lower():
+                        return member_id
+
+            # Fall back to matching the linked senator's displayed name.
+            for link in links:
+                key = name_key(link.get_text(" ", strip=True))
+                if key and key in members_by_name:
+                    return members_by_name[key]
+
+        return None
+
+    for text_node in soup.find_all(string=True):
+        label = normalize_label(str(text_node))
+        if not label:
+            continue
+
+        for original_label, role in roles.items():
+            if label != normalize_label(original_label):
+                continue
+
+            member_id = match_member(text_node.parent)
+
+            if member_id and member_id in member_ids:
+                if (member_id, role) not in seen:
+                    extracted.append({
+                        "id": member_id,
+                        "role": role,
+                        "chamber": "Senate" if side == "senate" else "House"
+                    })
+                    seen.add((member_id, role))
+
     return extracted
-
 
 def fetch_leadership(session: requests.Session, members: list[dict[str, Any]]) -> list[dict[str, str]]:
     members_by_name: dict[tuple[str, str], str] = {}
