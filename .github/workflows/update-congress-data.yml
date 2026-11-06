@@ -1,0 +1,54 @@
+name: Update Congress data
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every six hours (UTC). GitHub may delay scheduled jobs during busy periods.
+    - cron: '17 */6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'requirements.txt'
+      - '.github/workflows/update-congress-data.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: congress-data-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch and validate Congress data
+        env:
+          CONGRESS_API_KEY: ${{ secrets.CONGRESS_API_KEY }}
+        run: python scripts/sync_data.py
+
+      - name: Publish updated snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/congress.json
+          if git diff --cached --quiet; then
+            echo "No data changes to publish."
+          else
+            git commit -m "chore: refresh congressional data"
+            git push
+          fi
