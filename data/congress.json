@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-14T06:23:28Z",
+  "generatedAt": "2026-11-14T18:02:01Z",
   "congress": {
     "number": 119,
     "startYear": 2025,
@@ -3828,8 +3828,8 @@
   },
   "sourceHeaders": {
     "congressApiRateLimit": "20000",
-    "congressApiRateRemaining": "19998",
-    "congressApiCommitteeRateRemaining": "19998",
+    "congressApiRateRemaining": "19999",
+    "congressApiCommitteeRateRemaining": "19999",
     "supplementalLastModified": {
       "legislators": "Thu, 24 Sep 2026 10:21:30 GMT",
       "committees": "Thu, 24 Sep 2026 10:21:30 GMT",
